@@ -152,6 +152,17 @@ class imagequeue:
                 else:
                     filename=basename+"_c"+cal.kind[0]+str(calnum)
                 chifilename=filename+".chi"
+                if self.options["OverwriteFiles"]==False:
+                    if os.path.isfile(chifilename):
+                        print(chifilename, " already exists!")
+                        if self.options["livefilelist"] is not "xxx":
+                            with open(self.options["livefilelist"], 'a') as f_handle:
+                                file_path = os.path.normpath(chifilename)
+                                file_path=str.split(str(file_path), str(os.path.split(self.options["watchdir"])[0]))[1]
+                                output = file_path +", "+str(0)+ ", "+str(0)+", "+str(0)+"\n"
+                                f_handle.write(output)
+                                f_handle.close()
+                        continue
                 if self.options.GISAXSmode == True and calnum==0: #pass on GISAXSmode information to calibration.integratechi
                     continue
                 filelist[cal.kind+str(calnum)]=chifilename

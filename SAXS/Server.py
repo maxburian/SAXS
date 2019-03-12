@@ -338,7 +338,8 @@ class Server():
                             "serverport":self.serverport,
                             "nowalk":True,
                             "GISAXSmode":self.calibration["GISAXSmode"],
-                            "livefilelist":"xxx"
+                            "livefilelist":"xxx",
+                            "OverwriteFiles":False
                              })
             cals=[]
             
@@ -356,6 +357,9 @@ class Server():
             if "Slices" in   object['argument']['calibration']:
                 for slice in object['argument']['calibration']["Slices"]:
                     cals.append(GISAXSSlices.slice(object['argument']['calibration'],slice,self.attachments))
+            
+            if self.calibration["OverwriteFiles"]:
+                o["OverwriteFiles"]=True
             
             '''Create empty file for filelisting'''
             filelist_path="xxx"
