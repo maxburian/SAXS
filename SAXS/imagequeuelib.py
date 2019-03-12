@@ -18,6 +18,7 @@ import zmq
 import json
 import time
 import datamerge
+from numpy.f2py.crackfortran import skipfunctions
 #from SAXS.tifffile import   TiffFile 
 def funcworker(self,threadid):
    """
@@ -96,65 +97,37 @@ class imagequeue:
     def procimage(self,picture,threadid):
             filelist={}
             max=60
-            if not self.options.silent: print "[",threadid,"] open: ",picture 
-            for i in range(max):
-                try:
-                    image=misc.imread(picture)
-                except KeyboardInterrupt:
-                    return
-                except IOError as e:
-                    try:
-                        print "cannot open ", picture, ", lets wait.", max-i ," s"
-                        print e.message,  sys.exc_info()[0]
-                        time.sleep(1)
-                        continue
-                    except KeyboardInterrupt:
-                        return
-                except:
-                    print "############"
-                    print   sys.exc_info()
-                    continue
-                if image.shape==tuple(self.cals[0].config["Geometry"]["Imagesize"]):
-                    break
-                print "cannot open ", picture, ", lets wait.", max-i ," s"
-                time.sleep(1)
-                    
-            else:
-                print "image ", picture, " has wrong format"
-                return
+            data=[]
+            integparams={}
             
+            '''Setting output directory paths'''
             if self.options.outdir!="":
                 basename=self.options.outdir+os.sep+('_'.join(picture.replace('./','').split(os.sep))[:-3]).replace('/',"_")
                 basename=basename.replace(':', '').replace('.','')
             else:
-                reldir=os.path.join( 
-                                      os.path.dirname(picture),
+                reldir=os.path.join(os.path.dirname(picture),
                                       self.options.relpath)
                 if not os.path.isdir(reldir):
-		    try:
+                    try:
                         os.mkdir(reldir)
-		    except:
-			print "Problem creating WORK directory!!!"
-			return
-
-                basename=os.path.join( reldir,
-                                      os.path.basename(picture)[:-4])
-            data=[]
-            integparams={}
-            imgMetaData=datamerge.readtiff(picture)
-            if "date" in imgMetaData:
-                imgTime=imgMetaData["date"]
-            else:
-                imgTime="" 
-            for calnum,cal in enumerate(self.cals):
-                if len(list(enumerate(self.cals)))==1 or calnum==0:
-                    filename=basename
-                else:
-                    filename=basename+"_c"+cal.kind[0]+str(calnum)
-                chifilename=filename+".chi"
-                if self.options["OverwriteFiles"]==False:
+                    except:
+                        print "Problem creating WORK directory!!!"
+                        return
+                basename=os.path.join(reldir,
+                                       os.path.basename(picture)[:-4])
+                
+            '''Check if image exists or we are in Gisaxs mode'''
+            skipfile=False
+            if self.options["OverwriteFiles"]==False:
+                for calnum,cal in enumerate(self.cals):
+                    if len(list(enumerate(self.cals)))==1 or calnum==0:
+                        filename=basename
+                    else:
+                        filename=basename+"_c"+cal.kind[0]+str(calnum)
+                    chifilename=filename+".chi"
                     if os.path.isfile(chifilename):
-                        print(chifilename, " already exists!")
+                        filelist[cal.kind+str(calnum)]=chifilename
+                        skipfile=True
                         if self.options["livefilelist"] is not "xxx":
                             with open(self.options["livefilelist"], 'a') as f_handle:
                                 file_path = os.path.normpath(chifilename)
@@ -162,53 +135,99 @@ class imagequeue:
                                 output = file_path +", "+str(0)+ ", "+str(0)+", "+str(0)+"\n"
                                 f_handle.write(output)
                                 f_handle.close()
+                    if self.options.GISAXSmode == True and calnum==0: #pass on GISAXSmode information to calibration.integratechi
+                        skipfile=True
+            
+            '''Check if image can be opened'''
+            if skipfile==False: 
+                if not self.options.silent: print "[",threadid,"] open: ",picture 
+                for i in range(max):
+                    try:
+                        image=misc.imread(picture)
+                    except KeyboardInterrupt:
+                        return
+                    except IOError as e:
+                        try:
+                            print "cannot open ", picture, ", lets wait.", max-i ," s"
+                            print e.message,  sys.exc_info()[0]
+                            time.sleep(1)
+                            continue
+                        except KeyboardInterrupt:
+                            return
+                    except:
+                        print "############"
+                        print   sys.exc_info()
                         continue
-                if self.options.GISAXSmode == True and calnum==0: #pass on GISAXSmode information to calibration.integratechi
-                    continue
-                filelist[cal.kind+str(calnum)]=chifilename
-                if not self.options.resume or not os.path.isfile(chifilename):
-
-                    result=cal.integratechi(image,chifilename,picture)
-                    result["Image"]=picture
-                    if "Integparam" in result:
-                        integparams[cal.kind[0]+str(calnum)]=result["Integparam"]                  
-                    data.append(result)
-                    if self.options["livefilelist"] is not "xxx":
-                        #print result["Integparam"]["I0"]
-                        with open(self.options["livefilelist"],'a') as f_handle:
-                            file_path = os.path.normpath(chifilename)
-                            file_path=str.split(str(file_path),str(os.path.split(self.options["watchdir"])[0]))[1]
-                            if "Integparam" in result:
-                                output = file_path +", "+str(result["Integparam"]["I0"])+ \
-                                    ", "+str(result["Integparam"]["I1"])+", "+str(result["Integparam"]["I2"])+"\n"
-                            else:
-                                output = file_path +", "+str(0)+ \
-                                    ", "+str(0)+", "+str(0)+"\n"
-                            f_handle.write(output)
-                            f_handle.close()
-                            #np.savetxt(f_handle,self.filelist_output, delimiter=',', fmt="%s ")
-                        
-                    if threadid==0 and self.options.plotwindow:
-                        # this is a hack it really schould be a proper GUI
-                       
-                        cal.plot(image,fig=self.fig)
-                        plt.draw()
-                       
-                             
-                if self.options.writesvg:     
-                    if not self.options.resume or not os.path.isfile(filename+'.svg'):
-                         cal.plot(image,filename+".svg",fig=self.fig)
-                if self.options.writepng:
-                     if not self.options.resume or not os.path.isfile(filename+'.svg'):
-                          misc.imsave(filename+".png",image)
-                if self.options.silent:
-                    if np.mod(self.allp.value,100)==0:
-                        print "[",threadid,"] ",self.allp.value
+                    if image.shape==tuple(self.cals[0].config["Geometry"]["Imagesize"]):
+                        break
+                    print "cannot open ", picture, ", lets wait.", max-i ," s"
+                    time.sleep(1)  
+                    
                 else:
-                    print "[",threadid,"] write: ",filename+".chi" 
+                    print "image ", picture, " has wrong format"
+                    return
+                
+            if skipfile == False:
+                imgMetaData=datamerge.readtiff(picture)
+                if "date" in imgMetaData:
+                    imgTime=imgMetaData["date"]
+                else:
+                    imgTime="" 
+            else:
+                imgTime=""
+            
+            if skipfile==False:    
+                for calnum,cal in enumerate(self.cals):
+                    if len(list(enumerate(self.cals)))==1 or calnum==0:
+                        filename=basename
+                    else:
+                        filename=basename+"_c"+cal.kind[0]+str(calnum)
+                    chifilename=filename+".chi"
+                    filelist[cal.kind+str(calnum)]=chifilename
+                    if not self.options.resume or not os.path.isfile(chifilename):
+                        result=cal.integratechi(image,chifilename,picture)
+                        #print(chifilename, " has been integrated!")
+                        result["Image"]=picture
+                        if "Integparam" in result:
+                            integparams[cal.kind[0]+str(calnum)]=result["Integparam"]                  
+                        data.append(result)
+                        if self.options["livefilelist"] is not "xxx":
+                            #print result["Integparam"]["I0"]
+                            with open(self.options["livefilelist"],'a') as f_handle:
+                                file_path = os.path.normpath(chifilename)
+                                file_path=str.split(str(file_path),str(os.path.split(self.options["watchdir"])[0]))[1]
+                                if "Integparam" in result:
+                                    output = file_path +", "+str(result["Integparam"]["I0"])+ \
+                                        ", "+str(result["Integparam"]["I1"])+", "+str(result["Integparam"]["I2"])+"\n"
+                                else:
+                                    output = file_path +", "+str(0)+ \
+                                        ", "+str(0)+", "+str(0)+"\n"
+                                f_handle.write(output)
+                                f_handle.close()
+                                #np.savetxt(f_handle,self.filelist_output, delimiter=',', fmt="%s ")
+                            
+                        if threadid==0 and self.options.plotwindow:
+                            # this is a hack it really schould be a proper GUI
+                           
+                            cal.plot(image,fig=self.fig)
+                            plt.draw()
+                           
+                                 
+                    if self.options.writesvg:     
+                        if not self.options.resume or not os.path.isfile(filename+'.svg'):
+                             cal.plot(image,filename+".svg",fig=self.fig)
+                    if self.options.writepng:
+                         if not self.options.resume or not os.path.isfile(filename+'.svg'):
+                              misc.imsave(filename+".png",image)
+                    if self.options.silent:
+                        if np.mod(self.allp.value,100)==0:
+                            print "[",threadid,"] ",self.allp.value
+                    else:
+                        print "[",threadid,"] write: ",filename+".chi" 
+            
             with self.allp.get_lock():
                 self.allp.value+=1
-                
+                    
             filelist["JSON"]=basename+".json"
             
             try:
