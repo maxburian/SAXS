@@ -119,7 +119,7 @@ class imagequeue:
             '''Check if image exists or we are in Gisaxs mode'''
             skipfile=False
             if self.options["OverwriteFiles"]==False:
-                for calnum,cal in enumerate(self.cals):
+                for calnum,cal in enumerate(self.cals):  
                     if len(list(enumerate(self.cals)))==1 or calnum==0:
                         filename=basename
                     else:
@@ -135,8 +135,8 @@ class imagequeue:
                                 output = file_path +", "+str(0)+ ", "+str(0)+", "+str(0)+"\n"
                                 f_handle.write(output)
                                 f_handle.close()
-                    if self.options.GISAXSmode == True and calnum==0: #pass on GISAXSmode information to calibration.integratechi
-                        skipfile=True
+            if self.options.GISAXSmode == True and calnum==0: #pass on GISAXSmode information to calibration.integratechi
+                skipfile=True
             
             '''Check if image can be opened'''
             if skipfile==False: 
